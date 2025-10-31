@@ -6,11 +6,26 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from dotenv import load_dotenv
 from selenium.webdriver.support.ui import Select
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List
 
-# Find the select element
-load_dotenv()
+app = FastAPI(title="AspenBridge", version="1.0.0")
+
+# Enable CORS if you need to call this from a frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Change to specific origins in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class ScheduleResponse(BaseModel):
+    times: List[str]
+    blocks: List[str]
 
 def get_schedule():
     opts = Options()
@@ -24,6 +39,7 @@ def get_schedule():
 
     def getColumnOne(row):
         return f"/html/body/form/table/tbody/tr[2]/td/div/table[2]/tbody/tr[1]/td[2]/table[2]/tbody/tr[6]/td/div/table/tbody/tr/td/table/tbody/tr[{row}]/td[1]/table/tbody/tr[2]/td"
+    
     def getBlock(row):
         return f"/html/body/form/table/tbody/tr[2]/td/div/table[2]/tbody/tr[1]/td[2]/table[2]/tbody/tr[6]/td/div/table/tbody/tr/td/table/tbody/tr[{row}]/td[2]/table/tbody/tr[2]/td"
 
@@ -38,9 +54,15 @@ def get_schedule():
         username_field = wait.until(EC.presence_of_element_located((By.ID, "username")))
         password_field = driver.find_element(By.ID, "password")
         
-        # Credentials
-        username_field.send_keys(os.environ.get("ASPEN_USERNAME"))
-        password_field.send_keys(os.environ.get("ASPEN_PASSWORD"))
+        # Get credentials from environment variables
+        username = os.environ.get("ASPEN_USERNAME")
+        password = os.environ.get("ASPEN_PASSWORD")
+        
+        if not username or not password:
+            raise ValueError("ASPEN_USERNAME and ASPEN_PASSWORD environment variables must be set")
+        
+        username_field.send_keys(username)
+        password_field.send_keys(password)
         
         login_button = wait.until(
             EC.element_to_be_clickable((By.XPATH, "/html/body/go-root/go-login/go-login-container/div/div/div/go-default-login/form/div[4]/div/button"))
@@ -64,9 +86,7 @@ def get_schedule():
 
         # Length of schedule
         table = driver.find_element(By.XPATH, "/html/body/form/table/tbody/tr[2]/td/div/table[2]/tbody/tr[1]/td[2]/table[2]/tbody/tr[6]/td/div/table/tbody/tr/td/table")
-        length = table.find_elements(By.XPATH, "./tbody/tr")
-        length = len(length) + 1
-        print(length)
+        length = len(table.find_elements(By.XPATH, "./tbody/tr")) + 1
 
         # Get schedule times
         for i in range(2, length):
@@ -79,20 +99,26 @@ def get_schedule():
             blocks.append(element.text)
         
     except Exception as e:
-        print(f"Error: {e}")
-        return {"error": str(e)}
+        raise Exception(f"Error scraping schedule: {str(e)}")
     finally:
         driver.quit()
     
     return times, blocks
 
-times, blocks = get_schedule()
+@app.get("/")
+def root():
+    return {"message": "Schedule API is running", "endpoints": ["/schedule", "/docs"]}
 
-print(
-    {
-        "schedule": {
-            "times": times,
-            "blocks": blocks
-        }
-    }
-)
+@app.get("/schedule", response_model=ScheduleResponse)
+def get_schedule_endpoint():
+    """Get today's schedule from Aspen"""
+    try:
+        times, blocks = get_schedule()
+        return {"times": times, "blocks": blocks}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.get("/health")
+def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy"}
