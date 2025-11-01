@@ -1,5 +1,6 @@
 import os
 import secrets
+import re
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
@@ -12,14 +13,13 @@ from fastapi import FastAPI, HTTPException, Security, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 app = FastAPI(title="AspenBridge", version="1.0.0")
 
-# Enable CORS if you need to call this from a frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change to specific origins in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,9 +40,20 @@ async def verify_api_key(api_key: str = Security(api_key_header)):
         )
     return api_key
 
+class ScheduleItem(BaseModel):
+    time: str
+    block: str
+    meets: Optional[str] = None
+
 class ScheduleResponse(BaseModel):
-    times: List[str]
-    blocks: List[str]
+    schedule: List[ScheduleItem]
+
+def parse_block(block_text):
+    match = re.match(r'([A-Z])(\([^)]+\))', block_text)
+    if match:
+        return match.group(1), match.group(2)
+    # If no parentheses, return the text
+    return block_text, None
 
 def get_schedule():
     opts = Options()
@@ -60,8 +71,7 @@ def get_schedule():
     def getBlock(row):
         return f"/html/body/form/table/tbody/tr[2]/td/div/table[2]/tbody/tr[1]/td[2]/table[2]/tbody/tr[6]/td/div/table/tbody/tr/td/table/tbody/tr[{row}]/td[2]/table/tbody/tr[2]/td"
 
-    times = []
-    blocks = []
+    schedule_items = []
     
     try:
         driver.get("https://ma-melrose.myfollett.com/aspen-login/?deploymentId=ma-melrose")
@@ -105,22 +115,28 @@ def get_schedule():
         table = driver.find_element(By.XPATH, "/html/body/form/table/tbody/tr[2]/td/div/table[2]/tbody/tr[1]/td[2]/table[2]/tbody/tr[6]/td/div/table/tbody/tr/td/table")
         length = len(table.find_elements(By.XPATH, "./tbody/tr")) + 1
 
-        # Get schedule times
+        # Get schedule data
         for i in range(2, length):
-            element = driver.find_element(By.XPATH, getColumnOne(i))
-            times.append(element.text)
-
-        # Get schedule blocks
-        for i in range(2, length):
-            element = driver.find_element(By.XPATH, getBlock(i))
-            blocks.append(element.text)
+            time_element = driver.find_element(By.XPATH, getColumnOne(i))
+            block_element = driver.find_element(By.XPATH, getBlock(i))
+            
+            time = time_element.text
+            block_text = block_element.text
+            
+            block, meets = parse_block(block_text)
+            
+            schedule_items.append({
+                "block": block,
+                "time": time,
+                "meets": meets
+            })
         
     except Exception as e:
         raise Exception(f"Error scraping schedule: {str(e)}")
     finally:
         driver.quit()
     
-    return times, blocks
+    return schedule_items
 
 @app.get("/")
 def root():
@@ -128,10 +144,9 @@ def root():
 
 @app.get("/schedule", response_model=ScheduleResponse)
 def get_schedule_endpoint(api_key: str = Depends(verify_api_key)):
-    """Get today's schedule from Aspen (requires API key)"""
     try:
-        times, blocks = get_schedule()
-        return {"times": times, "blocks": blocks}
+        schedule = get_schedule()
+        return {"schedule": schedule}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
