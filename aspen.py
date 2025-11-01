@@ -1,4 +1,5 @@
 import os
+import secrets
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
@@ -7,8 +8,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Security, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 from typing import List
 
@@ -22,6 +24,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# API Key Authentication Setup
+API_KEY = os.environ.get("API_KEY")
+if not API_KEY:
+    raise ValueError("API_KEY environment variable must be set")
+
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=True)
+
+async def verify_api_key(api_key: str = Security(api_key_header)):
+    if not secrets.compare_digest(api_key, API_KEY):
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid or missing API key"
+        )
+    return api_key
 
 class ScheduleResponse(BaseModel):
     times: List[str]
@@ -107,11 +124,11 @@ def get_schedule():
 
 @app.get("/")
 def root():
-    return {"message": "AspenBridge is running", "endpoints": ["/schedule", "/docs"]}
+    return {"message": "AspenBridge - Melrose Public Schools", "endpoints": ["/schedule", "/docs"]}
 
 @app.get("/schedule", response_model=ScheduleResponse)
-def get_schedule_endpoint():
-    """Get today's schedule from Aspen"""
+def get_schedule_endpoint(api_key: str = Depends(verify_api_key)):
+    """Get today's schedule from Aspen (requires API key)"""
     try:
         times, blocks = get_schedule()
         return {"times": times, "blocks": blocks}
