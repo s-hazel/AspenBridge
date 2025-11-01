@@ -107,7 +107,7 @@ def get_schedule():
 
 @app.get("/")
 def root():
-    return {"message": "Schedule API is running", "endpoints": ["/schedule", "/docs"]}
+    return {"message": "AspenBridge is running", "endpoints": ["/schedule", "/docs"]}
 
 @app.get("/schedule", response_model=ScheduleResponse)
 def get_schedule_endpoint():
