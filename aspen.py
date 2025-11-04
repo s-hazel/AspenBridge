@@ -130,6 +130,13 @@ def get_schedule():
                 "time": time,
                 "meets": meets
             })
+    
+        logout_button = driver.find_element(By.XPATH, "/html/body/div[3]/div/table[1]/tbody/tr/td[3]/div/table/tbody/tr/td[3]/div/a")
+        logout_button.click()
+
+        WebDriverWait(driver, 10).until(EC.alert_is_present())
+        alert = driver.switch_to.alert
+        alert.accept()
         
     except Exception as e:
         raise Exception(f"Error scraping schedule: {str(e)}")
