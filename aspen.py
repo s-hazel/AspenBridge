@@ -123,14 +123,19 @@ def get_schedule():
             time_element = driver.find_element(By.XPATH, getColumnOne(i))
             time = time_element.text
             
-            block_element = driver.find_element(By.XPATH, getBlock(i))
+            block_elements = driver.find_elements(By.XPATH, getBlock(i))
 
-            if block_element and block_element.text:
-                block_text = block_element.text
+            block_text = (
+                block_elements[0].text.strip()
+                if block_elements else ""
+            )
+
+            if block_text:
                 block, meets = parse_block(block_text)
 
                 previous_block = block
                 previous_meets = meets
+
             else:
                 # Class is missing - spans 2 periods
                 if previous_block is None:
