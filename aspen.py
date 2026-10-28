@@ -115,15 +115,29 @@ def get_schedule():
         table = driver.find_element(By.XPATH, "/html/body/form/table/tbody/tr[2]/td/div/table[2]/tbody/tr[1]/td[2]/table[2]/tbody/tr[6]/td/div/table/tbody/tr/td/table")
         length = len(table.find_elements(By.XPATH, "./tbody/tr")) + 1
 
+        previous_block = None
+        previous_meets = None
+
         # Get schedule data
         for i in range(2, length):
             time_element = driver.find_element(By.XPATH, getColumnOne(i))
-            block_element = driver.find_element(By.XPATH, getBlock(i))
-            
             time = time_element.text
-            block_text = block_element.text
             
-            block, meets = parse_block(block_text)
+            block_element = driver.find_element(By.XPATH, getBlock(i))
+
+            if block_element and block_element.text:
+                block_text = block_element.text
+                block, meets = parse_block(block_text)
+
+                previous_block = block
+                previous_meets = meets
+            else:
+                # Class is missing - spans 2 periods
+                if previous_block is None:
+                    continue
+
+                block = previous_block
+                meets = previous_meets
             
             schedule_items.append({
                 "block": block,
